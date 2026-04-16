@@ -87,6 +87,17 @@ def collect_raw_data(ticker: str, max_workers: int = 6) -> dict:
     dims["0_basic"] = run_fetcher("fetch_basic", (ticker,))
     print(f" ✓ ({time.time() - wave1_start:.1f}s)")
 
+    # v2.2 · 关键修复: fetch_basic 内部会把中文名解析为代码，读回来给后续 fetcher
+    resolved_ticker = (dims.get("0_basic", {}).get("data") or {}).get("ticker")
+    if not resolved_ticker:
+        # 也可能在 result 顶层
+        resolved_ticker = dims.get("0_basic", {}).get("ticker")
+    if resolved_ticker and resolved_ticker != ticker:
+        print(f"  [resolve] {ticker} → {resolved_ticker}")
+        ticker = resolved_ticker
+        raw["ticker"] = ticker  # 更新 raw 的 ticker 字段
+        raw["market"] = dims["0_basic"].get("data", {}).get("market", "A")
+
     # ── Wave 2: all other 19 fetchers in parallel ──
     print(f"  [wave 2] 19 fetchers parallel (max_workers={max_workers})...")
     wave2_start = time.time()
@@ -814,7 +825,21 @@ def stage1(ticker: str) -> dict:
     Claude 应该在 stage1 之后介入，用 sub-agent 逐组分析 51 评委，
     覆盖 panel.json 中的 headline/reasoning/score，然后调 stage2 生成报告。
     """
-    ti = parse_ticker(ticker)
+    # v2.2 · 中文名自动解析: "北部港湾" → "000582.SZ"
+    from lib.market_router import is_chinese_name
+    if is_chinese_name(ticker):
+        try:
+            from lib import data_sources as _ds
+            resolved = _ds.resolve_chinese_name(ticker)
+            if resolved:
+                print(f"  [resolve] {ticker} → {resolved.full}")
+                ti = resolved
+            else:
+                ti = parse_ticker(ticker)
+        except Exception:
+            ti = parse_ticker(ticker)
+    else:
+        ti = parse_ticker(ticker)
     print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(f"🎯 TARGET: {ti.full}")
     print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

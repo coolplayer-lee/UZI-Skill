@@ -785,8 +785,8 @@ DIM_META = {
     },
     "12_capital_flow": {
         "id": "12", "title": "资金面", "en": "Capital Flow", "weight": 4, "cat": "mkt",
-        "kpis": ["northbound_20d", "margin_trend", "holders_trend", "main_5d"],
-        "kpi_labels": {"northbound_20d": "北向20日", "margin_trend": "融资余额", "holders_trend": "股东户数", "main_5d": "主力5日"},
+        "kpis": ["main_20d", "margin_trend", "holders_trend", "main_5d"],
+        "kpi_labels": {"main_20d": "主力资金20日", "margin_trend": "融资余额", "holders_trend": "股东户数", "main_5d": "主力5日"},
     },
     "13_policy": {
         "id": "13", "title": "政策与监管", "en": "Policy", "weight": 3, "cat": "env",

@@ -138,6 +138,15 @@ def main(ticker: str) -> dict:
         except Exception:
             return "—"
 
+    def _main_sum_20d(flow_list):
+        if not flow_list:
+            return "—"
+        try:
+            total = sum(float(r.get("主力净流入", 0) or 0) for r in flow_list[-20:])
+            return f"{total / 1e4:+.1f}万" if abs(total) < 1e8 else f"{total / 1e8:+.1f}亿"
+        except Exception:
+            return "—"
+
     def _holders_trend(h):
         if not h or len(h) < 2:
             return "—"
@@ -161,6 +170,7 @@ def main(ticker: str) -> dict:
             "holder_count_history": holders,
             "holders_trend": _holders_trend(holders),
             "main_fund_flow_20d": main_flow,
+            "main_20d": _main_sum_20d(main_flow),
             "main_5d": "—",
             "block_trades_recent": block_trades,
             "unlock_recent": unlock,
