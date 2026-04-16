@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Runtime cache & reports (user-specific, regenerated per-run)
+.cache/
+*/.cache/
+**/.cache/
+**/reports/
+skills/deep-analysis/scripts/.cache/
+skills/deep-analysis/scripts/reports/
+skills/deep-analysis/.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Debug / temp scripts (per-ticket, not for distribution)
+skills/deep-analysis/scripts/_*.py
+
+# Env
+.env
+.env.local
+*.key
