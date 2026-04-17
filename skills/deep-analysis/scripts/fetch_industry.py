@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 import akshare as ak  # type: ignore
 from lib.market_router import parse_ticker
+from lib.industry_mapping import resolve_csrc_industry
 
 
 # Industry → (growth %, TAM 亿, penetration %, lifecycle stage)
@@ -86,12 +87,11 @@ def _cninfo_industry_metrics(industry_name: str) -> dict:
             )
             if df is None or df.empty:
                 continue
-            # fuzzy match
-            matches = df[df["行业名称"].astype(str).str.contains(industry_name[:2], na=False)] \
-                if "行业名称" in df.columns else df.iloc[:0]
-            if matches.empty:
+            # v2.8.3 · 用语义映射代替 str.contains(industry[:2]) —— 旧版对"工业金属"
+            # 等前缀高碰撞的申万行业会误命中"农副食品加工业"
+            row = resolve_csrc_industry(industry_name, df)
+            if row is None:
                 continue
-            row = matches.iloc[0]
             pe_col = next((c for c in df.columns if "市盈率" in c and "加权" in c), None)
             return {
                 "industry_name_match": str(row.get("行业名称", "")),

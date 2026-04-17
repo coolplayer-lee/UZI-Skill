@@ -116,12 +116,11 @@ def main(ticker: str) -> dict:
                         symbol="证监会行业分类", date=d.strftime("%Y%m%d")
                     )
                     if df is not None and not df.empty:
-                        # Find industry row matching the target company's industry
+                        # v2.8.3 · 用语义映射替代 str.contains(industry[:2])
                         ind_name = basic.get("industry") or ""
-                        # Light matching - look for any of ind_name's chars
-                        matches = df[df["行业名称"].astype(str).str.contains(ind_name[:2], na=False)] if ind_name else df.iloc[:0]
-                        if not matches.empty:
-                            row = matches.iloc[0]
+                        from lib.industry_mapping import resolve_csrc_industry as _resolve
+                        row = _resolve(ind_name, df) if ind_name else None
+                        if row is not None:
                             pe_col = next((c for c in df.columns if "市盈率" in c and "加权" in c), None)
                             if pe_col:
                                 industry_pe_avg = round(float(row[pe_col]), 2)

@@ -373,6 +373,72 @@ def test_quotes_knowledge_base_has_source_urls():
             f"v2.8.1 regression: {inv_id} 原话条数不足"
 
 
+# ─── v2.8.3 · BUG#R10 · 行业分类碰撞错误（云铝股份被归为农副食品加工）──
+def test_industry_mapping_blocks_high_collision_substring():
+    """申万'工业金属'等前缀高碰撞行业绝不能被误映射到'农副食品加工业'"""
+    from lib.industry_mapping import SW_TO_CSRC_INDUSTRY, HIGH_COLLISION_TOKENS
+    # 核心映射必须存在
+    assert SW_TO_CSRC_INDUSTRY.get("工业金属") == "有色金属冶炼和压延加工业"
+    assert SW_TO_CSRC_INDUSTRY.get("白酒") == "酒、饮料和精制茶制造业"
+    assert SW_TO_CSRC_INDUSTRY.get("半导体") == "计算机、通信和其他电子设备制造业"
+    assert SW_TO_CSRC_INDUSTRY.get("钢铁") == "黑色金属冶炼和压延加工业"
+    # 黑名单必须包含关键的高碰撞前缀
+    assert "工业" in HIGH_COLLISION_TOKENS, "'工业' 必须在黑名单里（这是 BUG#R10 根源）"
+    assert "加工" in HIGH_COLLISION_TOKENS
+    assert "制造" in HIGH_COLLISION_TOKENS
+
+
+def test_resolve_csrc_industry_on_mock_df():
+    """模拟 cninfo 返回，验证 resolver 在多个碰撞候选中选对行"""
+    from lib.industry_mapping import resolve_csrc_industry
+    import pandas as pd
+    # 模拟 cninfo 行业分类的关键子集
+    df = pd.DataFrame({
+        "行业名称": [
+            "农副食品加工业",
+            "石油、煤炭及其他燃料加工业",
+            "黑色金属冶炼和压延加工业",
+            "有色金属冶炼和压延加工业",
+            "酒、饮料和精制茶制造业",
+            "计算机、通信和其他电子设备制造业",
+        ],
+        "静态市盈率-加权平均": [20.0, 15.0, 25.0, 32.0, 40.0, 60.0],
+    })
+
+    # 关键 case：工业金属 绝不能命中 农副食品加工业
+    row = resolve_csrc_industry("工业金属", df)
+    assert row is not None, "工业金属 应该命中"
+    assert row["行业名称"] == "有色金属冶炼和压延加工业", \
+        f"BUG#R10 regression: 工业金属 被误映射到 {row['行业名称']!r}"
+
+    # 白酒
+    row = resolve_csrc_industry("白酒", df)
+    assert row is not None
+    assert "酒" in row["行业名称"]
+
+    # 钢铁
+    row = resolve_csrc_industry("钢铁", df)
+    assert row is not None
+    assert "黑色金属" in row["行业名称"]
+
+    # 完全未知行业 → None（绝不盲选 iloc[0]）
+    row = resolve_csrc_industry("完全不存在的行业XYZ", df)
+    assert row is None, "未知行业必须返 None，不能盲选 iloc[0]"
+
+
+def test_fetch_industry_and_fetch_valuation_use_mapping():
+    """确保 fetch_industry 和 fetch_valuation 都接入了 resolver，不再用裸 str.contains"""
+    for fname in ("fetch_industry.py", "fetch_valuation.py"):
+        src = (SCRIPTS_DIR / fname).read_text(encoding="utf-8")
+        assert "resolve_csrc_industry" in src, \
+            f"BUG#R10 regression: {fname} 未接入 resolve_csrc_industry"
+        # 确认不再使用裸 contains(industry[:2]) pattern
+        assert "contains(industry_name[:2]" not in src, \
+            f"BUG#R10 regression: {fname} 仍有裸 contains(industry_name[:2])"
+        assert "contains(ind_name[:2]" not in src, \
+            f"BUG#R10 regression: {fname} 仍有裸 contains(ind_name[:2])"
+
+
 if __name__ == "__main__":
     # Manual runner — no pytest required
     import inspect

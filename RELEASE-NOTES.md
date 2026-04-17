@@ -1,5 +1,108 @@
 # Release Notes
 
+## v2.8.3 — 2026-04-17 (critical fix · 行业分类碰撞错误)
+
+> **严重 bug 修复：云铝股份被归类为"农副食品加工"的根因，影响所有带"工业"/"加工"/"制造"前缀的申万行业**
+
+### 用户报告
+> "2.8.0 存在行业找错问题，用户分析云铝股份，属于工业金属铝行业，但是行业分类却归类为农副食品加工，你检查一下什么问题，这个问题很严重，必须修复。"
+
+### BUG#R10 根因
+
+`fetch_industry.py:90` 和 `fetch_valuation.py:122` 都用 `df["行业名称"].str.contains(industry_name[:2])` 做 fuzzy 匹配：
+
+```python
+# v2.8.2 及之前（有 BUG）
+matches = df[df["行业名称"].astype(str).str.contains(industry_name[:2], na=False)]
+row = matches.iloc[0]   # ← 盲选第一行
+```
+
+证监会行业分类 120 行里包含 `"工业"` 子串的有 **4 个**：
+1. **农副食品加工业** ← `iloc[0]` 选中
+2. 石油、煤炭及其他燃料加工业
+3. 黑色金属冶炼和压延加工业
+4. 有色金属冶炼和压延加工业（本应命中）
+
+所以申万行业 `"工业金属"` 经过 `industry_name[:2] = "工业"` 匹配后，被**错误归类为"农副食品加工业"**。
+
+### 影响面（不只是云铝股份）
+
+所有带"工业 / 加工 / 制造"字样前缀的申万行业都会被误分到 `农副食品加工业`：
+- 工业金属 · 工业母机 · 工业机械 · 工业气体 → 错
+- 加工贸易相关子行业 → 错
+- 部分制造业细分 → 错
+
+**这意味着**：
+- `7_industry` 维度的 industry_pe / 公司数量全是错的
+- `10_valuation` 的 `industry_pe_avg` 用错了行业比较
+- `stock_style` 的 style 分类虽然基于申万名不受影响，但**相对估值判断偏移**
+- 报告里的"同行业景气度"文本全是假的
+
+### 修复方案
+
+新 `lib/industry_mapping.py` 做 **3 策略语义解析**：
+
+```python
+SW_TO_CSRC_INDUSTRY = {
+    "工业金属": "有色金属冶炼和压延加工业",
+    "白酒":     "酒、饮料和精制茶制造业",
+    "半导体":   "计算机、通信和其他电子设备制造业",
+    "钢铁":     "黑色金属冶炼和压延加工业",
+    # ... 共 134 条申万 → 证监会映射
+}
+
+HIGH_COLLISION_TOKENS = {"工业", "加工", "制造", "服务", "生产",
+                         "供应", "设备", "制品", "其他", ...}
+
+def resolve_csrc_industry(sw_industry, df):
+    # 1. 硬映射表精确命中（覆盖 134 常见申万行业）
+    # 2. 申万名整体作为子串包含
+    # 3. 去高碰撞前缀后 fuzzy（如 "工业金属" 去 "工业" 后用 "金属"）
+    # 4. 找不到 → 返 None（绝不盲选 iloc[0]）
+```
+
+### 修复验证
+
+```
+工业金属  → 有色金属冶炼和压延加工业 · PE 32.97
+工业母机  → 专用设备制造业 · PE 42.91
+白酒      → 酒、饮料和精制茶制造业 · PE 18.01
+半导体    → 计算机、通信和其他电子设备制造业 · PE 70.05
+钢铁      → 黑色金属冶炼和压延加工业 · PE 27.36
+化学原料  → 化学原料和化学制品制造业 · PE 33.91
+```
+
+### 改动文件
+
+- **NEW** `scripts/lib/industry_mapping.py` (~200 行)
+  - `SW_TO_CSRC_INDUSTRY` 134 条硬映射
+  - `HIGH_COLLISION_TOKENS` 12 个黑名单前缀
+  - `resolve_csrc_industry()` 4 策略解析函数
+- `scripts/fetch_industry.py::_cninfo_industry_metrics` · 接入 resolver
+- `scripts/fetch_valuation.py` · 接入 resolver
+- `scripts/tests/test_no_regressions.py` · 新增 3 条测试：
+  - `test_industry_mapping_blocks_high_collision_substring`
+  - `test_resolve_csrc_industry_on_mock_df`（mock DataFrame 确认不会选到 农副食品加工业）
+  - `test_fetch_industry_and_fetch_valuation_use_mapping`
+- `docs/BUGS-LOG.md` · 新增 BUG#R10 记录
+
+### 回归
+
+**33/33** regression tests pass（新增 3 条）
+
+### 紧急建议
+
+之前用 v2.8.0 / v2.8.1 / v2.8.2 分析过**工业金属 / 工业母机 / 工业机械** 相关股票的用户，请**清 cache 重跑**：
+
+```bash
+rm -rf skills/deep-analysis/scripts/.cache/<ticker>/raw_data.json
+python skills/deep-analysis/scripts/run_real_test.py <ticker> --no-resume
+```
+
+否则 `7_industry` / `10_valuation` 两维的报告数据都是错的。
+
+---
+
 ## v2.8.2 — 2026-04-17 (English support · 面向全球用户)
 
 > **README_EN / plugin manifests / marketplace 全面升级英文支持，面向西方投资者展示核心卖点：帮你理解让芒格都亏钱的阿里巴巴这种中国股票**

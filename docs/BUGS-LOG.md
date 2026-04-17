@@ -5,6 +5,28 @@
 
 ---
 
+## v2.8.3 (2026-04-17 critical · 行业分类碰撞错误)
+
+### BUG#R10 · 申万行业被误映射到证监会"农副食品加工业"（严重）
+- **症状**：用户分析云铝股份（000807.SZ），属于工业金属铝行业，但报告里 `7_industry` / `10_valuation` 两维都把它归类为**农副食品加工**
+- **位置**：`fetch_industry.py::_cninfo_industry_metrics:90` + `fetch_valuation.py:122`
+- **根因**：两处都用 `df["行业名称"].str.contains(industry_name[:2])` 做 fuzzy 匹配。证监会行业分类里含"工业"子串的有 4 个行业，其中农副食品加工业排第一，`iloc[0]` 盲选它
+- **影响面**：所有带"工业 / 加工 / 制造"字样的申万行业（工业金属/工业母机/工业机械/工业气体 etc）全受影响；报告的 industry_pe、公司数量、行业景气度文本全是错的
+- **修法**：新 `lib/industry_mapping.py`：
+  1. `SW_TO_CSRC_INDUSTRY` 134 条申万 → 证监会硬映射
+  2. `HIGH_COLLISION_TOKENS` 黑名单 12 个通用前缀
+  3. `resolve_csrc_industry()` 4 策略解析：硬映射 → 整名子串 → 去前缀 fuzzy → 返 None
+  4. **绝不再盲选 `iloc[0]`**，匹配不到明确返 None
+- **验证**：云铝股份 → 工业金属 → 有色金属冶炼和压延加工业 PE 32.97 ✓
+- **回归测试**：
+  - `test_industry_mapping_blocks_high_collision_substring`
+  - `test_resolve_csrc_industry_on_mock_df`（mock 6 个证监会行业，用工业金属查询必须选到有色金属加工业不能选到农副食品）
+  - `test_fetch_industry_and_fetch_valuation_use_mapping`
+- **若未来改 fetcher**：`resolve_csrc_industry` 是 single source of truth，不许退回裸 `str.contains(ind[:2])` pattern
+- **若未来加新申万行业**：优先加到 SW_TO_CSRC_INDUSTRY 硬映射；不行再靠 fallback，不要用 iloc[0] 盲选
+
+---
+
 ## v2.8.1 (2026-04-17 quotes expansion · 海外人物真实原话)
 
 ### 增强 · quotes-knowledge-base.md 补齐 22 位海外代表人物
