@@ -754,6 +754,68 @@ def test_network_preflight_exists():
         assert d in src, f"预检必须覆盖 {d} 域名"
 
 
+# ─── v2.10.3 · Providers 框架（Tushare/Efinance/BaoStock 适配器） ──
+def test_providers_framework_loads():
+    """v2.10.3 · providers 目录必须存在且核心 provider 已注册"""
+    from lib import providers
+    names = {p.name for p in providers.list_providers()}
+    # 至少 4 个内置 provider
+    assert "akshare" in names, "akshare provider 未注册"
+    assert "efinance" in names, "efinance provider 未注册"
+    assert "tushare" in names, "tushare provider 未注册"
+    assert "baostock" in names, "baostock provider 未注册"
+
+
+def test_provider_chain_failover():
+    """provider chain 必须按优先级返 + 只包含 available 的"""
+    from lib import providers
+    chain = providers.get_provider_chain("financials", market="A")
+    # 至少 akshare 或 baostock 在（测试机两者都装了）
+    assert len(chain) >= 1
+    # 所有返回的都必须 is_available()
+    assert all(p.is_available() for p in chain)
+
+
+def test_provider_env_override():
+    """UZI_PROVIDERS_<DIM> 环境变量可覆盖优先级"""
+    import os
+    from lib import providers
+    os.environ["UZI_PROVIDERS_FINANCIALS"] = "baostock,akshare"
+    try:
+        chain = providers.get_provider_chain("financials", market="A")
+        names = [p.name for p in chain]
+        # baostock 应该在前（如果可用）
+        if "baostock" in names and "akshare" in names:
+            assert names.index("baostock") < names.index("akshare")
+    finally:
+        os.environ.pop("UZI_PROVIDERS_FINANCIALS", None)
+
+
+def test_provider_health_check_api():
+    """health_check 返回统一 dict 结构"""
+    from lib import providers
+    hc = providers.health_check()
+    assert "akshare" in hc
+    for name, info in hc.items():
+        assert "available" in info
+        assert "status" in info
+
+
+def test_tushare_provider_requires_key():
+    """tushare 必须 requires_key=True 且无 token 时 is_available=False"""
+    import os
+    from lib import providers
+    ts = providers.get("tushare")
+    assert ts is not None
+    assert ts.requires_key is True
+    # 无 token
+    old = os.environ.pop("TUSHARE_TOKEN", None)
+    try:
+        assert ts.is_available() is False, "无 TUSHARE_TOKEN 时不该可用"
+    finally:
+        if old: os.environ["TUSHARE_TOKEN"] = old
+
+
 def test_parse_ticker_hk_3digit():
     """v2.10.2 · 3 位数字码（如 700/981）必须识别为 HK 不是 A 股"""
     from lib.market_router import parse_ticker
