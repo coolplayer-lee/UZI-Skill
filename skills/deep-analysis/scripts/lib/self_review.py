@@ -379,6 +379,84 @@ def check_factcheck_redflags(ctx: dict) -> list[Issue]:
 # Runner
 # ═══════════════════════════════════════════════════════════════
 
+def check_consensus_formula_sanity(ctx: dict) -> list[Issue]:
+    """v2.9.1 · panel_consensus 使用正确的半权 neutral 公式"""
+    issues = []
+    panel = ctx.get("panel") or {}
+    cf = panel.get("consensus_formula") or {}
+    cons = panel.get("panel_consensus", -1)
+    if cons < 0: return issues
+    # 如果 panel 里有 consensus_formula 但 version 不是 v2.9.1+，可能是老 panel.json
+    version = cf.get("version", "")
+    if cf and "v2.9.1" not in version and "bullish + 0.5" not in version:
+        issues.append(Issue(
+            severity="warning", category="panel", dim="panel",
+            issue="consensus_formula 不是 v2.9.1 半权公式，可能是旧 cache",
+            evidence=f"version={version!r}",
+            suggested_fix="清 cache 重跑或直接 stage2() 重新合成",
+        ))
+    # bullish=0 但 consensus > 20% 必然公式错
+    sig = panel.get("signal_distribution") or {}
+    if sig.get("bullish", 0) == 0 and cons > 20:
+        issues.append(Issue(
+            severity="critical", category="panel", dim="panel",
+            issue="panel_consensus 公式异常：bullish=0 但 consensus > 20%",
+            evidence=f"consensus={cons}, bullish={sig.get('bullish', 0)}, neutral={sig.get('neutral', 0)}",
+            suggested_fix="检查 generate_panel 的 consensus 公式",
+        ))
+    return issues
+
+
+def check_panel_insights_rendered(ctx: dict) -> list[Issue]:
+    """v2.9.1 · panel_insights 字段必须在报告里渲染（之前被丢掉的 bug）"""
+    issues = []
+    # 这个检查是 meta-level — 确认 assemble_report 源码里引用了 panel_insights
+    # 如果有人改代码删掉了 render 也能抓到
+    from pathlib import Path
+    ar = Path(__file__).resolve().parent.parent / "assemble_report.py"
+    if ar.exists():
+        src = ar.read_text(encoding="utf-8")
+        if "render_panel_insights" not in src:
+            issues.append(Issue(
+                severity="critical", category="self-check", dim="report",
+                issue="v2.9.1 regression: assemble_report 缺 render_panel_insights",
+                evidence="grep 失败",
+                suggested_fix="恢复 render_panel_insights 函数 + INJECT_PANEL_INSIGHTS 替换",
+            ))
+    return issues
+
+
+def check_debate_bull_bear_populated(ctx: dict) -> list[Issue]:
+    """v2.9.1 · debate.bull / bear 不能是空对象（否则模板会显示默认 buffett 假头像）"""
+    issues = []
+    syn = ctx.get("syn") or {}
+    debate = syn.get("debate") or {}
+    bull = debate.get("bull") or {}
+    bear = debate.get("bear") or {}
+    if not bull.get("investor_id"):
+        issues.append(Issue(
+            severity="warning", category="panel", dim="debate",
+            issue="debate.bull 未选出 bullish 代表（可能全 skip 或全 bearish）",
+            evidence=f"bull={bull}",
+            suggested_fix="确认 panel 有非 skip 投资者，或 agent 用 great_divide_override 指定",
+        ))
+    if not bear.get("investor_id"):
+        issues.append(Issue(
+            severity="warning", category="panel", dim="debate",
+            issue="debate.bear 未选出 bearish 代表",
+            evidence=f"bear={bear}",
+            suggested_fix="同上",
+        ))
+    if bull.get("investor_id") and bull.get("investor_id") == bear.get("investor_id"):
+        issues.append(Issue(
+            severity="critical", category="panel", dim="debate",
+            issue="debate bull 和 bear 是同一人",
+            evidence=f"both={bull.get('investor_id')!r}",
+            suggested_fix="generate_synthesis 选 bull/bear 逻辑应排除同人",
+        ))
+    return issues
+
+
 CHECKS = [
     check_industry_mapping_sanity,
     check_all_dims_exist,
@@ -393,6 +471,10 @@ CHECKS = [
     check_metals_materials_populated,
     check_agent_analysis_exists,
     check_factcheck_redflags,
+    # v2.9.1 · 评委汇总一致性检查
+    check_consensus_formula_sanity,
+    check_panel_insights_rendered,
+    check_debate_bull_bear_populated,
 ]
 
 

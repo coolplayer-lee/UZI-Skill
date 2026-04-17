@@ -520,6 +520,58 @@ def test_fetch_industry_has_dynamic_fallback():
         "v2.9 regression: fetch_industry 输出必须带 dynamic_snippets 给 agent 综合"
 
 
+# ─── v2.9.1 · 评委汇总渲染完整性 ──
+def test_panel_insights_rendered():
+    """panel_insights 必须被渲染到 HTML，不能写入 synthesis.json 后静默丢弃"""
+    # assemble_report 必须有 render_panel_insights
+    src = (SCRIPTS_DIR / "assemble_report.py").read_text(encoding="utf-8")
+    assert "def render_panel_insights" in src, \
+        "v2.9.1 regression: panel_insights 渲染函数缺失（之前的静默丢弃 bug）"
+    assert "render_panel_insights(syn, panel)" in src, \
+        "v2.9.1 regression: panel_insights 未被调用"
+    # template 必须有对应 inject 点
+    tpl = (SCRIPTS_DIR.parent / "assets" / "report-template.html").read_text(encoding="utf-8")
+    assert "INJECT_PANEL_INSIGHTS" in tpl, \
+        "v2.9.1 regression: template 缺 <!-- INJECT_PANEL_INSIGHTS -->"
+
+
+def test_top3_bears_rendered():
+    """share-card 必须对称渲染 Top 3 看多 + Top 3 看空"""
+    src = (SCRIPTS_DIR / "assemble_report.py").read_text(encoding="utf-8")
+    assert "def render_top3_bears" in src, \
+        "v2.9.1 regression: render_top3_bears 函数缺失（分享卡不对称）"
+    tpl = (SCRIPTS_DIR.parent / "assets" / "report-template.html").read_text(encoding="utf-8")
+    assert "INJECT_TOP3_BEARS" in tpl, \
+        "v2.9.1 regression: template 缺 INJECT_TOP3_BEARS"
+
+
+def test_consensus_half_weight_formula():
+    """panel_consensus 必须用半权 neutral 公式（v2.9.1 修的 bug）"""
+    src = (SCRIPTS_DIR / "run_real_test.py").read_text(encoding="utf-8")
+    # 找 generate_panel 函数体
+    fn_idx = src.find("def generate_panel")
+    fn_end = src.find("\ndef ", fn_idx + 100)
+    body = src[fn_idx:fn_end]
+    # 公式必须体现 neutral 半权
+    assert "0.5 * neutral" in body or "0.5*neutral" in body or "neutral / 2" in body, \
+        "v2.9.1 regression: consensus 公式未实现 neutral 半权"
+    # 老的裸 bullish-only 不该再单独出现
+    assert 'sig_dist["bullish"] / max(' not in body, \
+        "v2.9.1 regression: 仍有老的 bullish-only 公式"
+
+
+def test_debate_no_hardcoded_default_avatars():
+    """BULL_ID / BEAR_ID 不能默认 buffett/graham（debate 空时会显示错误头像）"""
+    src = (SCRIPTS_DIR / "assemble_report.py").read_text(encoding="utf-8")
+    # 找 BULL_ID / BEAR_ID 的 replacement 定义
+    idx = src.find('"{{BULL_ID}}":')
+    snippet = src[idx:idx + 500]
+    assert '"buffett"' not in snippet, \
+        "v2.9.1 regression: BULL_ID 默认值不能硬编码 buffett"
+    assert '"graham"' not in snippet, \
+        "v2.9.1 regression: BEAR_ID 默认值不能硬编码 graham"
+
+
 if __name__ == "__main__":
     # Manual runner — no pytest required
     import inspect

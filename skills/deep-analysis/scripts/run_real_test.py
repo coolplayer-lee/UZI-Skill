@@ -692,14 +692,29 @@ def generate_panel(dims_scored: dict, raw: dict) -> dict:
             "what_would_change_my_mind": verdict_obj.get("what_would_change_my_mind", "—"),
         })
 
+    # v2.9.1 · consensus 半权公式修复
+    # 旧公式 bullish / active 把 neutral 当成和 bearish 同样权重（0）
+    # 真实语义：neutral = "我观望"≠"我看空"，应半权计入共识
+    # 修后：consensus = (bullish + 0.5*neutral) / (bullish+neutral+bearish)
     active_count = len(investors_out) - sig_dist.get("skip", 0)
-    consensus = sig_dist["bullish"] / max(active_count, 1) * 100
+    bullish = sig_dist.get("bullish", 0)
+    neutral = sig_dist.get("neutral", 0)
+    consensus = (bullish + 0.5 * neutral) / max(active_count, 1) * 100
     return {
         "ticker": raw["ticker"],
         "panel_consensus": round(consensus, 1),
         "vote_distribution": vote_dist,
         "signal_distribution": sig_dist,
         "investors": investors_out,
+        # v2.9.1 · 诊断字段，方便 agent / 自查看到公式
+        "consensus_formula": {
+            "version": "v2.9.1 · (bullish + 0.5*neutral) / active",
+            "bullish": bullish,
+            "neutral_half_weight": neutral / 2,
+            "bearish": sig_dist.get("bearish", 0),
+            "skip": sig_dist.get("skip", 0),
+            "active": active_count,
+        },
     }
 
 

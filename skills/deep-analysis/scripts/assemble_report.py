@@ -156,13 +156,29 @@ def render_vote_bars(vote_dist: dict) -> str:
 
 
 def render_top3_bulls(investors: list[dict]) -> str:
-    bulls = sorted(
-        [i for i in investors if i.get("signal") == "bullish"],
+    return _render_top3_by_signal(investors, "bullish", "无看多评委 · 51 人整体倾向中性")
+
+
+def render_top3_bears(investors: list[dict]) -> str:
+    """v2.9.1 对称 render_top3_bulls 的 bear 版。share-card 原先只有 bulls 不对称。"""
+    return _render_top3_by_signal(investors, "bearish", "无看空评委 · 51 人整体倾向中性")
+
+
+def _render_top3_by_signal(investors: list[dict], target_signal: str, empty_msg: str) -> str:
+    """v2.9.1 · 提取公共逻辑 + 空时给友好提示而不是 3 个空 div"""
+    hits = sorted(
+        [i for i in investors if i.get("signal") == target_signal],
         key=lambda x: x.get("score", 0),
-        reverse=True,
+        reverse=(target_signal == "bullish"),  # bullish 按分降序；bearish 按分升序
     )[:3]
+    if not hits:
+        # 空时整块返一个提示，不再 fill 3 个空 div（那是"缺失"的视觉症状）
+        return (
+            f'<div class="sc-best-empty" style="grid-column:1/-1;text-align:center;'
+            f'color:#94a3b8;font-size:12px;padding:16px">{empty_msg}</div>'
+        )
     cells = []
-    for inv in bulls:
+    for inv in hits:
         cells.append(
             f'<div class="sc-best-cell">'
             f'<img src="avatars/{inv["investor_id"]}.svg">'
@@ -170,8 +186,12 @@ def render_top3_bulls(investors: list[dict]) -> str:
             f'<div class="score-num">{inv.get("score", 0)}</div>'
             f"</div>"
         )
+    # 不足 3 个时给半透明 placeholder 而不是空白格
     while len(cells) < 3:
-        cells.append('<div class="sc-best-cell"></div>')
+        cells.append(
+            '<div class="sc-best-cell" style="opacity:0.2">'
+            '<div style="font-size:12px;color:#94a3b8">—</div></div>'
+        )
     return "\n".join(cells)
 
 
@@ -1952,6 +1972,70 @@ def _render_fund_compact_row(m: dict, rank: int) -> str:
 </div>'''
 
 
+def render_panel_insights(syn: dict, panel: dict) -> str:
+    """v2.9.1 · 评委汇总观点（'panel_insights' 字段之前完全不渲染的 bug 修复）.
+
+    数据来源（优先级）：
+      1. agent 在 agent_analysis.json 写的 panel_insights (最完整的分析)
+      2. 若 agent 没写，用 panel 真实数据聚合生成一段（consensus + 流派倾向）
+    """
+    insights = (syn or {}).get("panel_insights") or ""
+
+    # 没有 agent 内容也要给摘要，不能让这个位置完全空白（那就是"缺失"）
+    if not insights:
+        sig = panel.get("signal_distribution") or {}
+        cf = panel.get("consensus_formula") or {}
+        bull = sig.get("bullish", 0)
+        neu  = sig.get("neutral", 0)
+        bear = sig.get("bearish", 0)
+        skip = sig.get("skip", 0)
+        cons = syn.get("panel_consensus", panel.get("panel_consensus", 0))
+        # 按流派统计倾向
+        investors = panel.get("investors", [])
+        from collections import Counter
+        grp_stance: dict[str, Counter] = {}
+        for inv in investors:
+            g = inv.get("group", "?")
+            grp_stance.setdefault(g, Counter())[inv.get("signal", "?")] += 1
+        grp_summary = []
+        GROUP_LABELS = {"A": "价值派", "B": "成长派", "C": "宏观派", "D": "技术派",
+                        "E": "中国价投", "F": "A 股游资", "G": "量化"}
+        for g in sorted(grp_stance.keys()):
+            c = grp_stance[g]
+            dominant = c.most_common(1)[0] if c else (("—", 0))
+            label = GROUP_LABELS.get(g, g)
+            tag = {"bullish": "看多", "bearish": "看空", "neutral": "中性", "skip": "跳过"}.get(
+                dominant[0], dominant[0]
+            )
+            grp_summary.append(f"{label} {c['bullish']}✓ / {c['bearish']}✗（主流 {tag}）")
+        insights = (
+            f"<strong>51 位评委投票聚合</strong>："
+            f"{bull} 看多 · {neu} 中性 · {bear} 看空 · {skip} 不适合该市场。"
+            f"共识度 <strong>{cons:.0f}%</strong>（neutral 半权计入）。"
+            f"<br><br><strong>按流派分布</strong>："
+            + "；".join(grp_summary) + "。"
+        )
+        if bull == 0 and bear > 10:
+            insights += " <em>⚠️ 无一人看多，压倒性看空——高信念回避信号。</em>"
+        elif bear == 0 and bull > 10:
+            insights += " <em>⚡ 无一人看空，压倒性看多——共识度极高（警惕追高）。</em>"
+        elif abs(bull - bear) < 5 and (bull + bear) > 20:
+            insights += " <em>🌪 多空旗鼓相当——这类分歧票往往波动最大。</em>"
+        tag_src = "（自动聚合 · agent 未介入）"
+    else:
+        tag_src = "（agent 深度分析）"
+
+    return (
+        f'<div class="panel-insights" style="margin:20px 0;padding:20px;'
+        f'background:rgba(8,145,178,0.08);border-left:4px solid #0891b2;'
+        f'border-radius:6px;line-height:1.8;font-size:14px">'
+        f'<div style="font-size:11px;color:#0891b2;letter-spacing:2px;'
+        f'margin-bottom:8px">📊 PANEL INSIGHTS · 评委汇总观点 {tag_src}</div>'
+        f'<div>{insights}</div>'
+        f'</div>'
+    )
+
+
 def render_debate_rounds(debate: dict) -> str:
     """3 rounds bull vs bear transcript."""
     rounds = debate.get("rounds") or []
@@ -2556,14 +2640,16 @@ def assemble(ticker: str) -> Path:
         "{{BP_POSITION}}": _safe(bp.get("position")),
         "{{BP_STOP}}": _safe(bp.get("stop")),
         "{{BP_TARGET}}": _safe(bp.get("target")),
-        "{{BULL_ID}}": _safe(bull.get("investor_id"), "buffett"),
-        "{{BULL_NAME}}": _safe(bull.get("name")),
+        # v2.9.1 · 不再用 buffett/graham 假头像兜底——如果 debate 真空，agent
+        # 没选出多空代表，应该显示占位而不是错误的头像+空数据
+        "{{BULL_ID}}": _safe(bull.get("investor_id"), "_placeholder"),
+        "{{BULL_NAME}}": _safe(bull.get("name"), "（未选出）"),
         "{{BULL_SCORE}}": str(divide.get("bull_score", 0)),
-        "{{BULL_LAST_SAY}}": _safe(last_round.get("bull_say")),
-        "{{BEAR_ID}}": _safe(bear.get("investor_id"), "graham"),
-        "{{BEAR_NAME}}": _safe(bear.get("name")),
+        "{{BULL_LAST_SAY}}": _safe(last_round.get("bull_say"), "—"),
+        "{{BEAR_ID}}": _safe(bear.get("investor_id"), "_placeholder"),
+        "{{BEAR_NAME}}": _safe(bear.get("name"), "（未选出）"),
         "{{BEAR_SCORE}}": str(divide.get("bear_score", 0)),
-        "{{BEAR_LAST_SAY}}": _safe(last_round.get("bear_say")),
+        "{{BEAR_LAST_SAY}}": _safe(last_round.get("bear_say"), "—"),
         "{{PUNCHLINE}}": _safe(divide.get("punchline") or debate.get("punchline")),
         "{{ZONE_VALUE_PRICE}}": str(_safe((zones.get("value") or {}).get("price"))),
         "{{ZONE_VALUE_RATIONALE}}": _safe((zones.get("value") or {}).get("rationale")),
@@ -2606,6 +2692,15 @@ def assemble(ticker: str) -> Path:
     template = template.replace(
         "<!-- INJECT_TOP3_BULLS -->",
         render_top3_bulls(investors),
+    )
+    # v2.9.1 · 对称补 Top 3 看空 + panel_insights 评委汇总
+    template = template.replace(
+        "<!-- INJECT_TOP3_BEARS -->",
+        render_top3_bears(investors),
+    )
+    template = template.replace(
+        "<!-- INJECT_PANEL_INSIGHTS -->",
+        render_panel_insights(syn, panel),
     )
     template = template.replace(
         "<!-- INJECT_RISKS -->",

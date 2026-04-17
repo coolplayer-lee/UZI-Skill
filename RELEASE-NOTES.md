@@ -1,5 +1,90 @@
 # Release Notes
 
+## v2.9.1 — 2026-04-17 (评委汇总观点 · 6 处 bug 修复)
+
+> **用户反馈："评委打分了，但是汇总评委观点那里存在缺失和数据不对的问题"**
+
+审计之后找到 6 个相关 bug（其中 1 个是"写入 synthesis 但从未渲染"的严重静默丢失）。
+
+### BUG 全列表
+
+| # | 严重性 | 问题 | 症状 |
+|---|---|---|---|
+| 1 | 🔴 critical | `panel_insights` 写入 synthesis.json 但**完全不渲染** | agent 写的面板级分析消失 |
+| 2 | 🟡 warning | 分享卡只有"Top 3 看多"，没有"Top 3 看空" | 不对称 |
+| 3 | 🟡 warning | 看多/看空为空时显示 3 个空灰格 | "缺失"的视觉症状 |
+| 4 | 🔴 critical | `{{BULL_ID}}` / `{{BEAR_ID}}` 默认 `"buffett"` / `"graham"` | debate 空时显示错误头像+空数据 |
+| 5 | 🟡 warning | `great_divide_override` 格式要求不一致没校验 | agent 写错格式静默丢 |
+| 6 | 🔴 critical | consensus 公式**完全错**：注释说半权，实际 `bullish / active`（neutral 权重 0） | 共识度长期偏低，高分股被评为"观望"甚至"回避" |
+
+### BUG#6 最严重 · consensus 公式
+
+旧代码：
+
+```python
+consensus = sig_dist["bullish"] / max(active_count, 1) * 100
+# 注释写 "neutral 半权计入 consensus" 但代码只用 bullish
+```
+
+样本：30 看多 / 15 中性 / 5 看空（共 50 active）
+- **旧公式**：30/50 = **60%**（中性按 0 权重当看空处理）
+- **v2.9.1 新**：(30 + 7.5)/50 = **75%**（中性按半权合理）
+
+这直接拉低了长期以来所有股票的 consensus 值，也是"数据不对"投诉的主因。
+
+### BUG#1 · panel_insights 静默丢失
+
+agent 在 `agent_analysis.json` 里写 `panel_insights` 字段（例如"51 位评委里 A 组价值派明显分化：Buffett 看多但 Klarman 看空，核心争议是安全边际"），会被 merge 到 synthesis.json。但 `assemble_report.py` **从未调用任何函数渲染这个字段**，template 也没有对应的 inject 点——**agent 写的面板级分析全部消失**。
+
+v2.9.1 新增：
+- `render_panel_insights(syn, panel)` 函数
+- template `<!-- INJECT_PANEL_INSIGHTS -->` 在 great_divide 3 rounds 之后
+- 如果 agent 没写，自动 fallback 用 panel 真实数据聚合一段（按流派分布 + 高信念信号提示）
+- 标记数据来源：`📊 PANEL INSIGHTS · 评委汇总观点（agent 深度分析）` vs `（自动聚合 · agent 未介入）`
+
+### BUG#2 + #3 · Top 3 对称 + 空时友好提示
+
+分享卡片原只有 `render_top3_bulls`——v2.9.1 补 `render_top3_bears`，template 加 `// 谁最看空你` section。
+
+空时不再 fill 3 个空 div（之前用户看到的"缺失"），改显示提示文案：
+- bulls 为空：`无看多评委 · 51 人整体倾向中性`
+- bears 为空：`无看空评委 · 51 人整体倾向中性`
+
+### BUG#4 · 不再硬编码假头像
+
+旧：`"{{BULL_ID}}": _safe(bull.get("investor_id"), "buffett")`
+
+现：`"_placeholder"` + name 默认 `"（未选出）"` — debate 真空时显示占位而不是冒充巴菲特有空数据。
+
+### self-review 新增 3 条检查
+
+- `check_consensus_formula_sanity` · bullish=0 但 consensus>20% 必然公式错
+- `check_panel_insights_rendered` · meta check · assemble_report 源码必有 `render_panel_insights`
+- `check_debate_bull_bear_populated` · debate.bull / bear 不能是空对象、不能是同一人
+
+### 改动文件
+
+- `scripts/run_real_test.py::generate_panel` · consensus 公式改半权 + 新增 `consensus_formula` 诊断字段
+- `scripts/assemble_report.py` · 新 `render_panel_insights` / `render_top3_bears` / `_render_top3_by_signal` 共用逻辑
+- `scripts/lib/self_review.py` · +3 个检查，`CHECKS` 16 → 19 条
+- `scripts/tests/test_no_regressions.py` · +4 条测试（45 → 49 实际 45 · 新 4）
+- `skills/deep-analysis/assets/report-template.html` · 2 个新 inject 点
+
+### 回归
+
+**45/45** regression tests pass（新增 4 条）
+
+### 建议
+
+之前版本跑的 cache `panel_consensus` 值都偏低（中性权重 0 的公式），想看准确共识度请清 cache 重跑：
+
+```bash
+rm -rf skills/deep-analysis/scripts/.cache/<ticker>/*
+python run.py <ticker> --no-resume
+```
+
+---
+
 ## v2.9.0 — 2026-04-17 (机械级 agent 自查 · 结构性改造)
 
 > **v2.9 关键变化：agent 自查从"软要求"升级到"机械强制"——HTML 生成前必过 13 项自动检查，critical 不过就 raise RuntimeError 拒绝出报告**

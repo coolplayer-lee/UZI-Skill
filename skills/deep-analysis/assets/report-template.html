@@ -2401,6 +2401,9 @@ footer strong { color: var(--text-dim); }
     </div>
 
     <div class="punchline">{{PUNCHLINE}}</div>
+
+    <!-- v2.9.1 · 评委汇总观点（agent 写的面板级分析，原先被静默丢弃） -->
+    <!-- INJECT_PANEL_INSIGHTS -->
   </div>
 
   <!-- ─── 50 INVESTORS · JUDGE PANEL ─── -->
@@ -2675,6 +2678,12 @@ footer strong { color: var(--text-dim); }
   <div class="sc-section-title">// 谁最看好你</div>
   <div class="sc-best">
     <!-- INJECT_TOP3_BULLS -->
+  </div>
+
+  <!-- v2.9.1 · 对称补 Top 3 看空 -->
+  <div class="sc-section-title">// 谁最看空你</div>
+  <div class="sc-best">
+    <!-- INJECT_TOP3_BEARS -->
   </div>
 
   <div class="sc-punchline-box">
