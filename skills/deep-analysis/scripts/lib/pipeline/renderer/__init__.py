@@ -8,5 +8,6 @@
 - ...
 """
 from .base import SectionRenderer, RenderContext
+from .registry import RENDERER_REGISTRY, get_renderer, list_renderers
 
-__all__ = ["SectionRenderer", "RenderContext"]
+__all__ = ["SectionRenderer", "RenderContext", "RENDERER_REGISTRY", "get_renderer", "list_renderers"]

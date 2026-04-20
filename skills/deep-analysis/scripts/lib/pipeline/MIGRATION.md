@@ -233,16 +233,66 @@ A:
 
 ---
 
-## 本次 Phase 1 交付
+## 交付进度
 
-✅ `lib/pipeline/schema.py` (111 行) · DimResult + FetcherSpec + Quality
-✅ `lib/pipeline/base_fetcher.py` (81 行) · BaseFetcher ABC
-✅ `lib/pipeline/validators.py` (86 行) · is_empty_value + normalize + validate
-✅ `lib/pipeline/renderer/base.py` (55 行) · SectionRenderer + RenderContext
-✅ `lib/pipeline/renderer/fund.py` (220 行) · FundRenderer + FUND_CODE_TO_MANAGER
-✅ `tests/pipeline/*` · 31 新 case
-✅ 本文档
+### ✅ Phase 1（已完成）· 骨架
+- `lib/pipeline/schema.py` · DimResult + FetcherSpec + Quality
+- `lib/pipeline/base_fetcher.py` · BaseFetcher ABC
+- `lib/pipeline/validators.py` · is_empty_value + normalize + validate
+- `lib/pipeline/renderer/base.py` · SectionRenderer + RenderContext
+- `lib/pipeline/renderer/fund.py` · FundRenderer + FUND_CODE_TO_MANAGER 示范
 
-**pytest 全量 286 passed**（255 baseline + 31 新 · 零回归）
+### ✅ Phase 2（已完成）· 22 fetcher adapter
+- `lib/pipeline/fetchers/registry.py` · 21 个注册 adapter（含 6_fund_holders + 6_research 两个 "6_*"）
+- 全部继承 BaseFetcher · 内部调 legacy `fetch_X.main()`
+- FetcherSpec 声明 required/optional/top_level/depends_on
+- 老代码零改动
 
-老入口未动：`run.py`, `stage1()`, `stage2()`, `assemble_report.py`, 22 个 `fetch_*.py` 全部保持工作。
+### ✅ Phase 3（已完成）· 8 section renderer
+- `renderer/basic_header.py` · 0_basic
+- `renderer/financials.py` · 1_financials
+- `renderer/peers.py` · 4_peers（3 态：full/lite/gap）
+- `renderer/fund.py` · 6_fund_holders（Phase 1 已完成 · 含 FUND_CODE_TO_MANAGER）
+- `renderer/industry.py` · 7_industry
+- `renderer/moat.py` · 14_moat（四力评分视觉）
+- `renderer/events.py` · 15_events
+- `renderer/sentiment.py` · 17_sentiment
+
+### ✅ Phase 4（已完成）· 管道编排骨架
+- `lib/pipeline/collect.py` · wave-based collector（wave 1 basic → wave 2 并发 → wave 3 依赖型）
+- `lib/pipeline/score.py` · stub（调 legacy · Phase 5 实现）
+- `lib/pipeline/synthesize.py` · stub（调 legacy · Phase 6 实现）
+- `UZI_PIPELINE=1` feature flag · 默认关闭
+
+### 📊 测试覆盖
+**pytest 全量 304 passed**（255 baseline + 49 新 pipeline · 零回归）
+- schema: 5 · validators: 12 · base_fetcher: 5 · fund_renderer: 8
+- fetcher_registry: 6 · renderer_registry: 9 · collect: 4
+
+### ⏳ Phase 5（未来 session）· 非关键 section renderer
+剩余 13 个 dim 的 renderer 待迁：
+- 2_kline / 3_macro / 5_chain / 6_research
+- 8_materials / 9_futures / 10_valuation / 11_governance
+- 12_capital_flow / 13_policy / 16_lhb / 18_trap / 19_contests
+
+### ⏳ Phase 6（未来 session）· score/synthesize 实装
+- Rules 引擎 + 51 评委打分挪进 `pipeline/score.py`
+- stage2 merge + HTML 组装挪进 `pipeline/synthesize.py`
+- Bull-Bear 辩论 + agent_analysis merge + 机械自查 gate
+
+### ⏳ Phase 7（未来 session）· 切换入口
+- run.py / stage1() / stage2() 改走 pipeline（`UZI_PIPELINE=1` 开关）
+- 双盲对比：同股票新老流程产出一致
+- 老代码 deprecated 标注
+
+### ⏳ Phase 8（未来 session）· 瘦身 + 合 main
+- 删 22 个 `fetch_X.py` · adapter 里内化 fetch 逻辑
+- `run_real_test.py` 瘦身到 < 200 行
+- `assemble_report.py` 瘦身到 < 400 行
+- merge `refactor/v3.0.0-pipeline-architecture` → `main`
+
+## 老入口保持工作
+
+`run.py`, `stage1()`, `stage2()`, `assemble_report.py`, 22 个 `fetch_*.py` 全部不动 · zero 业务中断.
+
+新 pipeline `UZI_PIPELINE=1` 启用后仅接管 collect 阶段 · score/synthesize 仍走老代码.

@@ -17,6 +17,7 @@
 from .schema import DimResult, FetcherSpec, Quality
 from .base_fetcher import BaseFetcher
 from .validators import is_empty_value, is_data_gap
+from .collect import collect, is_pipeline_enabled
 
 __all__ = [
     "DimResult",
@@ -25,4 +26,6 @@ __all__ = [
     "BaseFetcher",
     "is_empty_value",
     "is_data_gap",
+    "collect",
+    "is_pipeline_enabled",
 ]
