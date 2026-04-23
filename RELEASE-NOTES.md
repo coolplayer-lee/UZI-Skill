@@ -56,6 +56,17 @@
 - ❌ **v3.1.1 · 22 fetcher adapter 内化**：`fetch_*.py` 仍是独立 CLI 工具（`python fetch_basic.py <ticker>`）· 内化会破坏 user contract · 且 22 × 300 行工作量巨大
 - ❌ **v3.3 · 删除 rrt.collect_raw_data**：是 `UZI_LEGACY=1` 的 fallback collector · 删了等于移除保险绳 · 跟 v3.0 "永远可回退 legacy" 设计冲突
 
+### Agent 入口指引完善（v3.2.0 post-release · PR #48）
+
+> **用户反馈**："codex 也要有独立指引 · 你看下修复一下吧"
+
+Codex 首次审视 v3.2.0 时误报 `scripts/run.py 缺失` · 根因是 repo 路径约定没有 agent-facing 文档。
+
+- **新增 `CODEX.md`** (210 行) · Codex 专属浓缩指引：必读前 60 秒 / v3.0+ 架构约定 / Pipeline 数据流图 / 审视任务清单模板 / 常见误判避坑表 / 文件大小红线
+- **`AGENTS.md` 顶部加 "🗺️ Repository Layout & Entrypoints (v3.2.0)"** · 完整目录树 + 入口 Cheat Sheet + 模块调用约定
+
+Codex re-audit 7/7 CHECK PASS · Verdict: CLEAN · 原 HIGH 误报消除.
+
 ---
 
 ## v3.1.0 — 2026-04-23 (run_real_test.py 深度瘦身 · rrt -65%)
